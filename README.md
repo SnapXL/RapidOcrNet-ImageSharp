@@ -3,6 +3,15 @@ Cross-platform OCR processing library using PaddleOCR ONNX models, and based on 
 
 The code was optimised to remove dependencies on `System.Drawing` and `OpenCV`. The image processing is now done only using `SkiaSharp` and `PContourNet`.
 
+The project now uses PP-OCR v5 models, but v4 and v3 models are also supported (see [here](https://github.com/BobLd/RapidOcrNet/issues/3)).
+
+All ONNX models and files and can be downloaded from: https://github.com/RapidAI/RapidOCR/blob/main/python/rapidocr/default_models.yaml
+You will need 4 different files for the code to work. Example below for PP-OCR v5 with latin language:
+- Detection: `ch_PP-OCRv5_mobile_det.onnx`
+- Classification: `ch_ppocr_mobile_v2.0_cls_infer.onnx`
+- Recognition: `latin_PP-OCRv5_rec_mobile_infer.onnx`
+- Model dictionary: `ppocrv5_latin_dict.txt`
+
 ## Usage
 ```csharp
 string targetImg = "image.png";
@@ -49,6 +58,4 @@ The dependency on OpenCV was removed thanks to the PContour library and its C# p
 - https://github.com/LingDong-/PContour
 - https://github.com/BobLd/PContourNet
 
-The models made available are from the PaddleOCR project (Apache-2.0 license) and were converted to ONNX using the Paddle2ONNX tool.
-- https://paddlepaddle.github.io/PaddleOCR/en/ppocr/model_list.html
-- https://github.com/PaddlePaddle/Paddle2ONNX
+The models made available are from the PaddleOCR project (Apache-2.0 license) and were downloaded from https://github.com/RapidAI/RapidOCR/blob/main/python/rapidocr/default_models.yaml
