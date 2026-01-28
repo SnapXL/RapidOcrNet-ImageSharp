@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="RapidOcrNet.ConsoleApp/RapidOcrNet.ConsoleApp.csproj" />
+  <Project Path="RapidOcrNet.Tests/RapidOcrNet.Tests.csproj" />
+  <Project Path="RapidOcrNet/RapidOcrNet.csproj" />
+</Solution>

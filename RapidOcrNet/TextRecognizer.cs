@@ -6,7 +6,9 @@ using System.Diagnostics;
 using System.Text;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
-using SkiaSharp;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
 
 namespace RapidOcrNet
 {
@@ -21,17 +23,10 @@ namespace RapidOcrNet
         private string[] _keys;
         private string _inputName;
 
-        public void InitModel(string path, string keysPath, int numThread)
+        public void InitModel(string path, string? keysPath, int numThread)
         {
             if (!File.Exists(path))
-            {
                 throw new FileNotFoundException($"Recognizer model file does not exist: '{path}'.");
-            }
-
-            if (!File.Exists(keysPath))
-            {
-                throw new FileNotFoundException($"Recognizer keys file does not exist: '{keysPath}'.");
-            }
 
             var op = new SessionOptions
             {
@@ -42,31 +37,57 @@ namespace RapidOcrNet
 
             _crnnNet = new InferenceSession(path, op);
             _inputName = _crnnNet.InputMetadata.Keys.First();
-            _keys = InitKeys(keysPath);
+
+            if (!string.IsNullOrEmpty(keysPath))
+            {
+                if (!File.Exists(keysPath))
+                    throw new FileNotFoundException($"Recognizer keys file does not exist: '{keysPath}'.");
+
+                _keys = InitKeys(keysPath);
+            }
+            else
+            {
+
+                var meta = _crnnNet.ModelMetadata.CustomMetadataMap;
+                if (meta.TryGetValue("character", out var characterData))
+                {
+                    _keys = InitKeys(path, characterData);
+
+                    Console.WriteLine($"[ONNX] Loaded {_keys.Length} keys from model metadata.");
+                }
+            }
         }
 
-        private static string[] InitKeys(string path)
-        {
-            using (var sr = new StreamReader(path, Encoding.UTF8))
-            {
-                List<string> keys = ["#"];
 
+        private static string[] InitKeys(string path, string? characterData = null)
+        {
+            var keys = new List<string> { "#" }; // start with special symbol
+
+            if (!string.IsNullOrEmpty(characterData))
+            {
+                keys.AddRange(characterData.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
+            }
+            else
+            {
+                using var sr = new StreamReader(path, Encoding.UTF8);
                 while (sr.ReadLine() is { } line)
                 {
                     keys.Add(line);
                 }
-
-                keys.Add(" ");
-                System.Diagnostics.Debug.WriteLine($"keys Size = {keys.Count}");
-
-                return keys.ToArray();
             }
+
+            keys.Add(" ");
+
+            System.Diagnostics.Debug.WriteLine($"keys Size = {keys.Count}");
+
+            return keys.ToArray();
         }
 
-        public TextLine[] GetTextLines(SKBitmap[] partImgs)
+
+        public TextLine[] GetTextLines(Image<Rgba32>[] partImgs)
         {
             var textLines = new TextLine[partImgs.Length];
-            for (int i = 0; i < partImgs.Length; i++)
+            for (var i = 0; i < partImgs.Length; i++)
             {
                 textLines[i] = GetTextLine(partImgs[i]);
             }
@@ -74,22 +95,23 @@ namespace RapidOcrNet
             return textLines;
         }
 
-        public TextLine GetTextLine(SKBitmap src)
+        public TextLine GetTextLine(Image<Rgba32> src)
         {
             var sw = Stopwatch.StartNew();
             float scale = CrnnDstHeight / (float)src.Height;
             int dstWidth = (int)(src.Width * scale);
 
             Tensor<float> inputTensors;
-            using (SKBitmap srcResize = src.Resize(new SKSizeI(dstWidth, CrnnDstHeight), new SKSamplingOptions(SKCubicResampler.Mitchell)))
+
+            // Resize using ImageSharp
+            using (var srcResize = src.Clone(ctx => ctx.Resize(dstWidth, CrnnDstHeight, KnownResamplers.Bicubic)))
             {
 #if DEBUG
-                using (var fs = new FileStream($"Recognizer_{Guid.NewGuid()}.png", FileMode.Create))
-                {
-                    srcResize.Encode(fs, SKEncodedImageFormat.Png, 100);
-                }
+                string debugPath = $"Recognizer_{Guid.NewGuid()}.png";
+                srcResize.Save(debugPath);
 #endif
 
+                // Convert to Tensor<float> (mean subtraction and normalization)
                 inputTensors = OcrUtils.SubtractMeanNormalize(srcResize, MeanValues, NormValues);
             }
 
@@ -102,7 +124,7 @@ namespace RapidOcrNet
             {
                 using (IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results = _crnnNet.Run(inputs))
                 {
-                    var result = results[0];
+                    var result = results.First();
                     var tl = ScoreToTextLine(result.AsTensor<float>());
                     tl.Time = sw.ElapsedMilliseconds;
                     return tl;
@@ -111,7 +133,6 @@ namespace RapidOcrNet
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine(ex.Message + ex.StackTrace);
-                //throw ex;
             }
 
             return new TextLine() { Time = sw.ElapsedMilliseconds };
@@ -119,30 +140,41 @@ namespace RapidOcrNet
 
         private TextLine ScoreToTextLine(Tensor<float> srcData)
         {
-            var dimensions = srcData.Dimensions;
-            int h = dimensions[1];
-            int w = dimensions[2];
+            var dimensions = srcData.Dimensions; // e.g., [1, 80, 6625]
+            int frames = dimensions[1]; // Height (Time steps)
+            int vocabSize = dimensions[2]; // Width (Characters in dict)
+
+            var scores = new List<float>(frames);
+            var chars = new List<string>(frames);
+
+            // Get flat data to avoid multi-dimensional indexer overhead
+            var data = srcData.ToArray();
 
             int lastIndex = 0;
-            var scores = new List<float>();
-            var chars = new List<string>();
 
-            for (int i = 0; i < h; i++)
+            for (int i = 0; i < frames; i++)
             {
                 int maxIndex = 0;
-                float maxValue = -1000F;
+                float maxValue = -1000f;
 
-                for (int j = 0; j < w; j++)
+                // Current frame offset
+                int offset = i * vocabSize;
+
+                for (int j = 0; j < vocabSize; j++)
                 {
-                    float v = srcData[0, i, j];
+                    float v = data[offset + j];
                     if (v > maxValue)
                     {
-                        maxIndex = j;
                         maxValue = v;
+                        maxIndex = j;
                     }
                 }
 
-                if (maxIndex > 0 && maxIndex < _keys.Length && !(i > 0 && maxIndex == lastIndex))
+                // CTC Logic: 
+                // 1. Skip the "Blank" token (usually index 0)
+                // 2. Skip if it's a repeat of the previous frame's character
+                // 3. Ensure it's within the dictionary bounds
+                if (maxIndex > 0 && maxIndex < _keys.Length && maxIndex != lastIndex)
                 {
                     scores.Add(maxValue);
                     chars.Add(_keys[maxIndex]);

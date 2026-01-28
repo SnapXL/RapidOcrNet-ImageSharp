@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+		<TargetFramework>net10.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<IsAotCompatible>true</IsAotCompatible>
@@ -10,60 +10,35 @@
 
 	<PropertyGroup>
 		<Authors>BobLd;RapidOCR</Authors>
-		<PackageTags>OCR;RapidOCR;PaddleOCR;PP-OCRv5;PPOCRv5;Document;skia;skiasharp;onnx;image</PackageTags>
-		<RepositoryUrl>https://github.com/BobLd/RapidOcrNet</RepositoryUrl>
-		<PackageProjectUrl>https://github.com/BobLd/RapidOcrNet</PackageProjectUrl>
-		<Description>Lightweight cross-platform OCR processing library using PaddleOCR ONNX PP-OCR v5 models, and based on original code from RapidAI's RapidOCR.</Description>
+		<PackageTags>OCR;RapidOCR;PaddleOCR;PP-OCRv5;PPOCRv5;Document;imagesharp;onnx;image</PackageTags>
+		<RepositoryUrl>https://github.com/SnapXL/RapidOcrNet-ImageSharp</RepositoryUrl>
+		<PackageProjectUrl>https://github.com/SnapXL/RapidOcrNet-ImageSharp</PackageProjectUrl>
+		<Description>Ultra-lightweight, managed cross-platform OCR library utilizing ImageSharp for a smaller dependency footprint. Optimized for PaddleOCR ONNX PP-OCR v5 models, this high-performance fork of RapidOcrNet eliminates SkiaSharp for streamlined, portable deployments.</Description>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-		<PackageRequireLicenseAcceptance>True</PackageRequireLicenseAcceptance>
-		<PackageId>RapidOcrNet</PackageId>
-		<Title>RapidOcrNet</Title>
-		<Product>RapidOcrNet</Product>
+<!--		<PackageRequireLicenseAcceptance>True</PackageRequireLicenseAcceptance>-->
+		<PackageId>BrycensRanch.RapidOcrNet</PackageId>
+		<Title>RapidOcrNet-ImageSharp</Title>
+		<Product>RapidOcrNet-ImageSharp</Product>
 		<PublishRepositoryUrl>true</PublishRepositoryUrl>
-		<SignAssembly>True</SignAssembly>
-		<AssemblyOriginatorKeyFile>..\RapidOcrNet.snk</AssemblyOriginatorKeyFile>
+<!--		<SignAssembly>True</SignAssembly>-->
+<!--		<AssemblyOriginatorKeyFile>..\RapidOcrNet.snk</AssemblyOriginatorKeyFile>-->
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Clipper2" Version="1.5.4" />
+		<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.2" />
+		<PackageReference Include="Clipper2" Version="2.0.0" />
 		<PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.23.2" />
 		<PackageReference Include="Microsoft.ML.OnnxRuntime.Managed" Version="1.23.2" />
-		<PackageReference Include="SkiaSharp" Version="3.119.1" />
-		<PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.119.1" />
+		<PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+		<PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.1.7" />
 	</ItemGroup>
-
-	<ItemGroup>
-		<None Update="models\v5\ch_PP-OCRv5_mobile_det.onnx">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		</None>
-		<None Update="models\v5\ch_ppocr_mobile_v2.0_cls_infer.onnx">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		</None>
-		<None Update="models\v5\latin_PP-OCRv5_rec_mobile_infer.onnx">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		</None>
-		<None Update="models\v5\ppocrv5_latin_dict.txt">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		</None>
-	</ItemGroup>
-
-	<ItemGroup>
-		<Folder Include="models\NewFolder\" />
-	</ItemGroup>
-
+	
 	<ItemGroup>
 		<None Include="..\README.md">
 			<Pack>True</Pack>
 			<PackagePath>\</PackagePath>
 		</None>
-	</ItemGroup>
-
-	<ItemGroup>
-		<Content Include="RapidOcrNet.targets" PackagePath="build/RapidOcrNet.targets" />
-		<Content Include="models\v5\*.*" Pack="true" PackagePath="models\v5">
-			<PackageCopyToOutput>true</PackageCopyToOutput>
-		</Content>
 	</ItemGroup>
 
 </Project>

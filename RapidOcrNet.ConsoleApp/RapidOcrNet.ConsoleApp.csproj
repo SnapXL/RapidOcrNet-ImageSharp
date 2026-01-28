@@ -2,7 +2,7 @@
 
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
-		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+		<TargetFramework>net10.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<PublishAot>true</PublishAot>
@@ -11,27 +11,29 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\RapidOcrNet\RapidOcrNet.csproj" />
+		<Models Include="$(MSBuildThisFileDirectory)\..\models\v5\*.*" />
 	</ItemGroup>
 
 	<ItemGroup>
-		<None Update="1997.png">
+		<None Update="*.png">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
-		<None Update="5090.FontNameList.1_raw.png">
+		<None Update="*.PNG">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
-		<None Update="5090.FontNameList.2_raw.png">
+		<None Update="*.jpeg">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
-		<None Update="img_10.jpg">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		</None>
-		<None Update="rotated.PNG">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		</None>
-		<None Update="rotated2.PNG">
+		<None Update="*.jpg">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
 	</ItemGroup>
+	<Target Name="CopyModelsBuild" AfterTargets="Build">
+		<Copy SourceFiles="@(Models)" DestinationFolder="$(TargetDir)models\v5\" />
+	</Target>
+
+	<Target Name="CopyModelsPublish" AfterTargets="Publish">
+		<Copy SourceFiles="@(Models)" DestinationFolder="$(PublishDir)models\v5\" />
+	</Target>
 
 </Project>

@@ -25,7 +25,7 @@
 
 // See https://github.com/BobLd/PContourNet
 
-using SkiaSharp;
+using SixLabors.ImageSharp;
 
 namespace RapidOcrNet
 {
@@ -179,7 +179,7 @@ namespace RapidOcrNet
             /// <summary>
             /// Vertices.
             /// </summary>
-            internal List<SKPoint> points;
+            internal List<PointF> points;
 
             /// <summary>
             /// Unique ID, starts from 2.
@@ -199,7 +199,7 @@ namespace RapidOcrNet
             /// <summary>
             /// Vertices.
             /// </summary>
-            public Span<SKPoint> GetSpan()
+            public Span<PointF> GetSpan()
             {
                 ArgumentNullException.ThrowIfNull(points, nameof(points));
 
@@ -323,7 +323,7 @@ namespace RapidOcrNet
                         id = nbd,
                         points =
                         [
-                            new SKPoint(j, i)
+                            new PointF(j, i)
                         ]
                     };
 
@@ -386,7 +386,7 @@ namespace RapidOcrNet
                             throw new Exception("Could not find first counter clockwise non-zero element in neighborhood.");
                         }
 
-                        contours[contours.Count - 1].points.Add(new SKPoint(j4, i4));
+                        contours[contours.Count - 1].points.Add(new PointF(j4, i4));
 
                         // (a) If the pixel (i3, j3 + 1) is a O-pixel examined in the
                         // substep (3.3) then fi3, j3 <-  -NBD.
@@ -434,7 +434,7 @@ namespace RapidOcrNet
             return contours;
         }
 
-        private static float PointDistanceToSegment(SKPoint p, SKPoint p0, SKPoint p1)
+        private static float PointDistanceToSegment(PointF p, PointF p0, PointF p1)
         {
             // https://stackoverflow.com/a/6853926
             float x = p.X;
@@ -483,7 +483,7 @@ namespace RapidOcrNet
         /// </summary>
         /// <param name="polyline">The vertices.</param>
         /// <returns>A simplified copy.</returns>
-        public static ReadOnlySpan<SKPoint> ApproxPolySimple(ReadOnlySpan<SKPoint> polyline)
+        public static ReadOnlySpan<PointF> ApproxPolySimple(ReadOnlySpan<PointF> polyline)
         {
             float epsilon = 0.1f;
             if (polyline.Length <= 2)
@@ -492,7 +492,7 @@ namespace RapidOcrNet
             }
 
             int p = 0;
-            Span<SKPoint> ret = new SKPoint[polyline.Length];
+            Span<PointF> ret = new PointF[polyline.Length];
             ret[p++] = polyline[0];
 
             for (int i = 1; i < polyline.Length - 1; i++)
@@ -519,7 +519,7 @@ namespace RapidOcrNet
         /// <param name="polyline">The vertices.</param>
         /// <param name="epsilon">Maximum allowed error.</param>
         /// <returns>A simplified copy.</returns>
-        public static ReadOnlySpan<SKPoint> ApproxPolyDP(ReadOnlySpan<SKPoint> polyline, float epsilon)
+        public static ReadOnlySpan<PointF> ApproxPolyDP(ReadOnlySpan<PointF> polyline, float epsilon)
         {
             // https://en.wikipedia.org/wiki/Ramer–Douglas–Peucker_algorithm
             // David Douglas & Thomas Peucker, 
@@ -548,17 +548,17 @@ namespace RapidOcrNet
             }
 
             int p = 0;
-            Span<SKPoint> ret = new SKPoint[polyline.Length];
+            Span<PointF> ret = new PointF[polyline.Length];
 
             if (dmax > epsilon)
             {
-                ReadOnlySpan<SKPoint> L = ApproxPolyDP(polyline.Slice(0, argmax + 1), epsilon);
+                ReadOnlySpan<PointF> L = ApproxPolyDP(polyline.Slice(0, argmax + 1), epsilon);
                 foreach (var l in L.Slice(0, L.Length - 1))
                 {
                     ret[p++] = l;
                 }
 
-                ReadOnlySpan<SKPoint> R = ApproxPolyDP(polyline.Slice(argmax), epsilon);
+                ReadOnlySpan<PointF> R = ApproxPolyDP(polyline.Slice(argmax), epsilon);
                 foreach (var r in R)
                 {
                     ret[p++] = r;

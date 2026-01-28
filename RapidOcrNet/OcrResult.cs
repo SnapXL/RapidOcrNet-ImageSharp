@@ -3,13 +3,13 @@
 // https://github.com/RapidAI/RapidOCR/blob/92aec2c1234597fa9c3c270efd2600c83feecd8d/dotnet/RapidOcrOnnxCs/OcrLib/OcrResult.cs
 
 using System.Text;
-using SkiaSharp;
+using SixLabors.ImageSharp;
 
 namespace RapidOcrNet
 {
     public sealed class TextBox
     {
-        public required SKPointI[] Points { get; init; }
+        public required PointF[] Points { get; init; }
         public float Score { get; init; }
 
         public override string ToString()
@@ -17,6 +17,7 @@ namespace RapidOcrNet
             return $"TextBox[score({Score}),[x: {Points[0].X}, y: {Points[0].Y}], [x: {Points[1].X}, y: {Points[1].Y}], [x: {Points[2].X}, y: {Points[2].Y}], [x: {Points[3].X}, y: {Points[3].Y}]]";
         }
     }
+
 
     public sealed class Angle
     {
@@ -50,7 +51,7 @@ namespace RapidOcrNet
 
     public sealed class TextBlock
     {
-        public required SKPointI[] BoxPoints { get; init; }
+        public required PointF[] BoxPoints { get; init; }
         public float BoxScore { get; init; }
         public int AngleIndex { get; init; }
         public float AngleScore { get; init; }

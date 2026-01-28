@@ -2,8 +2,7 @@
 // Adapted from PdfPig
 // https://github.com/UglyToad/PdfPig/blob/master/src/UglyToad.PdfPig/Geometry/GeometryExtensions.cs
 
-using System.Buffers;
-using SkiaSharp;
+using SixLabors.ImageSharp;
 
 namespace RapidOcrNet
 {
@@ -15,103 +14,72 @@ namespace RapidOcrNet
         /// <param name="point1">The first point.</param>
         /// <param name="point2">The second point.</param>
         /// <param name="point3">The third point.</param>
-        private static bool ccw(in SKPoint point1, in SKPoint point2, in SKPoint point3)
+        private static bool ccw(in PointF point1, in PointF point2, in PointF point3)
         {
             return (point2.X - point1.X) * (point3.Y - point1.Y) > (point2.Y - point1.Y) * (point3.X - point1.X);
         }
 
-        private sealed class PdfPointXYComparer : IComparer<SKPoint>
+        private sealed class PdfPointXYComparer : IComparer<PointF>
         {
             public static readonly PdfPointXYComparer Instance = new PdfPointXYComparer();
 
-            public int Compare(SKPoint p1, SKPoint p2)
+            public int Compare(PointF p1, PointF p2)
             {
                 int comp = p1.X.CompareTo(p2.X);
                 return comp == 0 ? p1.Y.CompareTo(p2.Y) : comp;
             }
         }
 
-        private static float polarAngle(SKPoint point1, SKPoint point2)
+        private static float polarAngle(PointF point1, PointF point2)
         {
             // This is used for grouping, we could use Math.Round()
             return MathF.Atan2(point2.Y - point1.Y, point2.X - point1.X) % MathF.PI;
         }
-
         /// <summary>
-        /// Algorithm to find the convex hull of the set of points with time complexity O(n log n).
+        /// Computes the convex hull of a set of points using Andrew's Monotone Chain algorithm.
+        /// This algorithm has a time complexity of O(n log n) and is generally faster and 
+        /// more numerically stable than Graham Scan as it avoids trigonometric calculations.
         /// </summary>
-        public static IReadOnlyCollection<SKPoint> GrahamScan(SKPoint[] points)
+        /// <param name="points">The array of points to process.</param>
+        /// <returns>A collection of points representing the convex hull in counter-clockwise order.</returns>
+        public static IReadOnlyCollection<PointF> MonotoneChain(PointF[] points)
         {
-            if (points is null || points.Length == 0)
+            int n = points.Length;
+            if (n <= 2) return points;
+
+            // Sort points lexicographically (by X, then Y)
+            Array.Sort(points, (a, b) => a.X != b.X ? a.X.CompareTo(b.X) : a.Y.CompareTo(b.Y));
+
+            PointF[] hull = new PointF[2 * n];
+            int k = 0;
+
+            // Build Lower Hull
+            for (int i = 0; i < n; ++i)
             {
-                throw new ArgumentException("GrahamScan(): points cannot be null and must contain at least one point.",
-                    nameof(points));
-            }
-
-            if (points.Length < 3)
-            {
-                return points;
-            }
-
-            Array.Sort(points, PdfPointXYComparer.Instance);
-
-            var P0 = points[0];
-            var groups = points.Skip(1)
-                .GroupBy(p => polarAngle(P0, p))
-                .OrderBy(g => g.Key)
-                .ToArray();
-
-            var sortedPoints = ArrayPool<SKPoint>.Shared.Rent(groups.Length);
-
-            try
-            {
-                for (int i = 0; i < groups.Length; i++)
+                while (k >= 2 && CrossProduct(hull[k - 2], hull[k - 1], points[i]) <= 0)
                 {
-                    var group = groups[i];
-                    if (group.Count() == 1)
-                    {
-                        sortedPoints[i] = group.First();
-                    }
-                    else
-                    {
-                        // if more than one point has the same angle, 
-                        // remove all but the one that is farthest from P0
-                        sortedPoints[i] = group.MaxBy(p =>
-                        {
-                            float dx = p.X - P0.X;
-                            float dy = p.Y - P0.Y;
-                            return dx * dx + dy * dy;
-                        });
-                    }
+                    k--;
                 }
-
-                if (groups.Length < 2)
-                {
-                    return [P0, sortedPoints[0]];
-                }
-
-                var stack = new Stack<SKPoint>();
-                stack.Push(P0);
-                stack.Push(sortedPoints[0]);
-                stack.Push(sortedPoints[1]);
-
-                for (int i = 2; i < groups.Length; i++)
-                {
-                    var point = sortedPoints[i];
-                    while (stack.Count > 1 && !ccw(stack.ElementAt(1), stack.Peek(), in point))
-                    {
-                        stack.Pop();
-                    }
-
-                    stack.Push(point);
-                }
-
-                return stack;
+                hull[k++] = points[i];
             }
-            finally
+
+            // Build Upper Hull
+            for (int i = n - 2, t = k + 1; i >= 0; i--)
             {
-                ArrayPool<SKPoint>.Shared.Return(sortedPoints);
+                while (k >= t && CrossProduct(hull[k - 2], hull[k - 1], points[i]) <= 0)
+                {
+                    k--;
+                }
+                hull[k++] = points[i];
             }
+
+            // Result includes the start point twice (as the end), so we take k-1
+            return hull.Take(k - 1).ToList();
+        }
+
+        private static float CrossProduct(PointF a, PointF b, PointF c)
+        {
+            return (b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X);
         }
 
         /// <summary>
@@ -119,14 +87,14 @@ namespace RapidOcrNet
         /// and then finding its MAR.
         /// </summary>
         /// <param name="points">The points.</param>
-        public static SKPoint[] MinimumAreaRectangle(SKPoint[] points)
+        public static PointF[] MinimumAreaRectangle(PointF[] points)
         {
             if (points is null || points.Length == 0)
             {
                 throw new ArgumentException("MinimumAreaRectangle(): points cannot be null and must contain at least one point.", nameof(points));
             }
 
-            return ParametricPerpendicularProjection(GrahamScan(points.Distinct().ToArray()).ToArray());
+            return ParametricPerpendicularProjection(MonotoneChain(points.Distinct().ToArray()).ToArray());
         }
 
         /// <summary>
@@ -139,7 +107,7 @@ namespace RapidOcrNet
         /// The vertices of P are assumed to be in strict cyclic sequential order, either clockwise or
         /// counter-clockwise relative to the origin P0.
         /// </param>
-        private static SKPoint[] ParametricPerpendicularProjection(ReadOnlySpan<SKPoint> polygon)
+        private static PointF[] ParametricPerpendicularProjection(ReadOnlySpan<PointF> polygon)
         {
             if (polygon.Length == 0)
             {
@@ -171,8 +139,8 @@ namespace RapidOcrNet
 
             while (true)
             {
-                SKPoint Pk = polygon[k];
-                SKPoint Pj = polygon[j];
+                PointF Pk = polygon[k];
+                PointF Pj = polygon[j];
 
                 float vX = Pj.X - Pk.X;
                 float vY = Pj.Y - Pk.Y;
@@ -224,7 +192,7 @@ namespace RapidOcrNet
 
                 if (l != -1)
                 {
-                    SKPoint Pl = polygon[l];
+                    PointF Pl = polygon[l];
                     float PlMinusQX = Pl.X - QX;
                     float PlMinusQY = Pl.Y - QY;
 
@@ -263,21 +231,22 @@ namespace RapidOcrNet
 
             return
             [
-                new SKPoint(mrb[4], mrb[5]),
-                new SKPoint(mrb[6], mrb[7]),
-                new SKPoint(mrb[2], mrb[3]),
-                new SKPoint(mrb[0], mrb[1])
+                new PointF(mrb[4], mrb[5]),
+                new PointF(mrb[6], mrb[7]),
+                new PointF(mrb[2], mrb[3]),
+                new PointF(mrb[0], mrb[1])
             ];
         }
 
-        public static void GetSize(SKPoint[] points, out float width, out float height)
+        public static void GetSize(PointF[] points, out float width, out float height)
         {
-            SKPoint topLeft = points[0];
-            SKPoint bottomLeft = points[2];
-            SKPoint bottomRight = points[3];
+            PointF topLeft = points[0];
+            PointF bottomLeft = points[2];
+            PointF bottomRight = points[3];
 
             width = MathF.Sqrt((bottomLeft.X - bottomRight.X) * (bottomLeft.X - bottomRight.X) + (bottomLeft.Y - bottomRight.Y) * (bottomLeft.Y - bottomRight.Y));
             height = MathF.Sqrt((bottomLeft.X - topLeft.X) * (bottomLeft.X - topLeft.X) + (bottomLeft.Y - topLeft.Y) * (bottomLeft.Y - topLeft.Y));
         }
+
     }
 }
