@@ -3,7 +3,10 @@
 // https://github.com/RapidAI/RapidOCR/blob/92aec2c1234597fa9c3c270efd2600c83feecd8d/dotnet/RapidOcrOnnxCs/OcrLib/OcrUtils.cs
 
 using System.IO.Compression;
+using System.Net.Http.Json;
 using System.Numerics;
+using System.Security.Cryptography;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using SixLabors.ImageSharp;
@@ -13,6 +16,21 @@ using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 
 namespace RapidOcrNet;
+
+internal record GitHubRelease(
+    [property: JsonPropertyName("assets")] List<GitHubAsset> Assets
+);
+
+internal record GitHubAsset(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("digest")] string Digest
+);
+
+[JsonSourceGenerationOptions(WriteIndented = true, PropertyNamingPolicy = JsonKnownNamingPolicy.Unspecified)]
+[JsonSerializable(typeof(GitHubRelease))]
+internal partial class GitHubSourceContext : JsonSerializerContext
+{
+}
 
 internal static class OcrUtils
 {
@@ -62,28 +80,53 @@ internal static class OcrUtils
         {
             try
             {
-                using var response = await httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-                response.EnsureSuccessStatusCode();
-
                 var fileName = Path.GetFileName(uri.LocalPath);
                 if (string.IsNullOrWhiteSpace(fileName)) fileName = Guid.NewGuid().ToString();
 
-                var destinationPath = Path.Combine(destinationFolder, fileName);
-                await using var responseStream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+                var isBrotli = fileName.EndsWith(".br", StringComparison.OrdinalIgnoreCase);
+                var finalFileName = isBrotli ? fileName[..^3] : fileName;
+                var destinationPath = Path.Combine(destinationFolder, finalFileName);
+                var tempPath = destinationPath + ".tmp";
 
-                if (response.Content.Headers.ContentEncoding.Contains("br") || fileName.EndsWith(".br", StringComparison.OrdinalIgnoreCase))
+                string? expectedSha256 = null;
+                if (uri.Host.Contains("github.com"))
                 {
-                    if (fileName.EndsWith(".br")) destinationPath = destinationPath[..^3];
+                    expectedSha256 = await TryGetGitHubDigest(uri, fileName, httpClient, ct);
+                }
 
-                    await using var decompressionStream = new BrotliStream(responseStream, CompressionMode.Decompress);
-                    await using var fileStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, 4096, true);
-                    await decompressionStream.CopyToAsync(fileStream, ct).ConfigureAwait(false);
-                }
-                else
+                using var response = await httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+                response.EnsureSuccessStatusCode();
+
+                await using (var responseStream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
                 {
-                    await using var fileStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, 4096, true);
-                    await responseStream.CopyToAsync(fileStream, ct).ConfigureAwait(false);
+                    if (isBrotli || response.Content.Headers.ContentEncoding.Contains("br"))
+                    {
+                        await using var decompressionStream = new BrotliStream(responseStream, CompressionMode.Decompress);
+                        await using var fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 4096, true);
+                        await decompressionStream.CopyToAsync(fileStream, ct).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await using var fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 4096, true);
+                        await responseStream.CopyToAsync(fileStream, ct).ConfigureAwait(false);
+                    }
                 }
+
+                if (expectedSha256 != null)
+                {
+                    var actualHash = await CalculateSHA256Async(tempPath);
+                    if (!string.Equals(actualHash, expectedSha256, StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new IOException($"Integrity failure for {destinationPath}. GitHub says {expectedSha256}, but we got {actualHash}.");
+                    }
+                }
+
+                if (new FileInfo(tempPath).Length < 1)
+                {
+                    throw new IOException($"File {destinationPath} failed minimum size requirement. It is likely corrupted.");
+                }
+
+                File.Move(tempPath, destinationPath, true);
             }
             catch (OperationCanceledException)
             {
@@ -93,8 +136,40 @@ internal static class OcrUtils
             catch (Exception ex)
             {
                 logger.LogError(ex, "Failed to process {Uri}", uri);
+                throw;
             }
         }
+    }
+    private static async Task<string?> TryGetGitHubDigest(Uri downloadUri, string assetName, HttpClient client, CancellationToken ct)
+    {
+        try
+        {
+            var segments = downloadUri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length < 5) return null;
+
+            var owner = segments[0];
+            var repo = segments[1];
+            var tag = segments[4];
+
+            var apiUrl = $"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}";
+            var release = await client.GetFromJsonAsync(apiUrl, GitHubSourceContext.Default.GitHubRelease, ct);
+
+            var asset = release?.Assets?.FirstOrDefault(a => a.Name == assetName);
+            if (asset?.Digest != null && asset.Digest.StartsWith("sha256:"))
+            {
+                return asset.Digest.Replace("sha256:", "");
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    private static async Task<string> CalculateSHA256Async(string filePath)
+    {
+        using var sha256 = SHA256.Create();
+        await using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true);
+        var hash = await sha256.ComputeHashAsync(stream);
+        return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
     }
     public static Image<Rgba32> MakePadding(Image<Rgba32> src, int padding)
     {

@@ -85,7 +85,14 @@ namespace RapidOcrNet
             if (!File.Exists(localPath))
             {
                 missing.Add((new Uri(url), localPath));
+                return;
             }
+
+            var info = new FileInfo(localPath);
+
+            if (info.Length >= 1) return;
+            File.Delete(localPath);
+            missing.Add((new Uri(url), localPath));
         }
         public OcrResult Detect(string path, RapidOcrOptions options)
         {
